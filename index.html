@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>ONFA SURVIVAL</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#08090d;color:#fff;font-family:Arial,sans-serif}
+body{touch-action:none}
+#game{position:fixed;inset:0;width:100%;height:100%;background:radial-gradient(circle at 50% 40%,#171a25 0,#090a0f 58%,#050507 100%)}
+canvas{position:absolute;inset:0;width:100%;height:100%}
+#hud{position:absolute;top:14px;left:14px;right:14px;display:flex;justify-content:space-between;pointer-events:none;z-index:4}
+.box{background:#10131bdd;border:1px solid #ffffff1c;border-radius:14px;padding:9px 12px;backdrop-filter:blur(8px);box-shadow:0 8px 25px #0005}
+.label{font-size:10px;letter-spacing:2px;color:#9da3b7}.value{font-size:20px;font-weight:800}
+#hpWrap{position:absolute;left:50%;top:76px;transform:translateX(-50%);width:min(310px,65vw);height:12px;background:#ffffff14;border-radius:20px;overflow:hidden;border:1px solid #fff2;z-index:4}
+#hp{height:100%;width:100%;background:linear-gradient(90deg,#ff315e,#ff8a4c);transition:width .15s}
+#msg{position:absolute;top:18%;left:50%;transform:translateX(-50%) scale(.8);font-size:clamp(20px,6vw,42px);font-weight:900;text-align:center;text-shadow:0 5px 25px #000;opacity:0;z-index:8;white-space:nowrap;pointer-events:none}
+#msg.show{animation:pop 1.7s ease both}
+@keyframes pop{0%{opacity:0;transform:translateX(-50%) scale(.7)}18%{opacity:1;transform:translateX(-50%) scale(1.08)}75%{opacity:1}100%{opacity:0;transform:translateX(-50%) scale(1)}}
+#menu,#over{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;background:#05060acc;backdrop-filter:blur(10px);padding:25px}
+.card{width:min(430px,94vw);text-align:center;padding:30px 22px;border:1px solid #ffffff1c;border-radius:26px;background:#11131bf2;box-shadow:0 20px 80px #0009}
+.logo{font-size:clamp(42px,13vw,70px);font-weight:1000;letter-spacing:-4px}
+.sub{color:#ff5579;font-weight:900;letter-spacing:4px;margin-top:-5px}
+.desc{color:#b8bdcc;line-height:1.6;font-size:14px;margin:20px 0}
+input{width:100%;padding:15px;border-radius:14px;border:1px solid #ffffff20;background:#080a0f;color:#fff;text-align:center;font-size:16px;outline:none;margin-bottom:12px}
+button{border:0;border-radius:15px;padding:15px 24px;background:linear-gradient(135deg,#ff3767,#ff704e);color:#fff;font-weight:900;font-size:16px;cursor:pointer;box-shadow:0 10px 30px #ff416033}
+button:active{transform:scale(.96)}
+#controls{position:absolute;left:0;right:0;bottom:22px;display:flex;justify-content:space-between;align-items:end;padding:0 22px;z-index:5;pointer-events:none}
+#joy{width:105px;height:105px;border:1px solid #ffffff18;border-radius:50%;background:#ffffff09;position:relative;pointer-events:auto}
+#stick{position:absolute;width:45px;height:45px;left:30px;top:30px;border-radius:50%;background:#ffffff18;border:1px solid #fff3}
+.attack{width:82px;height:82px;border-radius:50%;pointer-events:auto;background:#ff3e68;border:2px solid #ffffff30;display:flex;align-items:center;justify-content:center;font-size:30px;box-shadow:0 0 35px #ff3e6855}
+#over{display:none}
+.rank{font-size:13px;color:#aeb4c5;margin:12px 0 22px}
+.rank b{color:#fff}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div id="game">
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="box"><div class="label">SCORE</div><div class="value" id="score">0</div></div>
+  <div class="box"><div class="label">WAVE</div><div class="value" id="wave">1</div></div>
+  <div class="box"><div class="label">TIME</div><div class="value" id="time">0s</div></div>
+</div>
+<div id="hpWrap"><div id="hp"></div></div>
+<div id="msg"></div>
+<div id="controls">
+  <div id="joy"><div id="stick"></div></div>
+  <div class="attack" id="atk">⚔️</div>
+</div>
+
+<div id="menu">
+ <div class="card">
+  <div class="logo">ONFA</div><div class="sub">SURVIVAL</div>
+  <div class="desc">60 seconds? Bhool ja. 😈<br>Jitni der zinda rahoge, utna score.<br>Enemies ko destroy karo aur group ke sabko roast karne layak score lao.</div>
+  <input id="name" maxlength="18" placeholder="Apna naam daal">
+  <button id="start">START SURVIVAL ⚡</button>
+ </div>
+</div>
+
+<div id="over">
+ <div class="card">
+  <div class="sub">GAME OVER</div>
+  <div class="logo" id="finalScore">0</div>
+  <div class="rank" id="roast"></div>
+  <button id="again">REVENGE 🔥</button>
+ </div>
+</div>
+</div>
+
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,dpr,run=false,last=0,elapsed=0,score=0,wave=1,hp=100,spawn=0,attackCD=0,kills=0;
+let player={x:0,y:0,r:17,speed:245,dx:0,dy:0};
+let enemies=[],shots=[],particles=[],joy={x:0,y:0,active:false};
+const $=id=>document.getElementById(id);
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+
+function showMsg(t){let m=$('msg');m.textContent=t;m.classList.remove('show');void m.offsetWidth;m.classList.add('show')}
+function reset(){score=0;elapsed=0;wave=1;hp=100;spawn=0;attackCD=0;kills=0;enemies=[];shots=[];particles=[];player.x=W/2;player.y=H/2;player.dx=0;player.dy=0;updateHud()}
+function updateHud(){$('score').textContent=Math.floor(score);$('wave').textContent=wave;$('time').textContent=Math.floor(elapsed)+'s';$('hp').style.width=Math.max(0,hp)+'%'}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function spawnEnemy(){
+ let side=Math.floor(Math.random()*4),x,y;
+ if(side===0){x=-30;y=Math.random()*H}else if(side===1){x=W+30;y=Math.random()*H}else if(side===2){x=Math.random()*W;y=-30}else{x=Math.random()*W;y=H+30}
+ let fast=Math.random()<.18, r=fast?11:15;
+ enemies.push({x,y,r,speed:(fast?100:62)+wave*5,hp:fast?1:2,max:fast?1:2,hit:0})
+}
+function burst(x,y,n=8){for(let i=0;i<n;i++){let a=Math.random()*Math.PI*2,s=30+Math.random()*100;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.45})}}
+function attack(){
+ if(!run||attackCD>0)return;
+ attackCD=.23;
+ let target=null,best=Infinity;
+ for(let e of enemies){let d=dist(player,e);if(d<230&&d<best){best=d;target=e}}
+ if(target){
+   let a=Math.atan2(target.y-player.y,target.x-player.x);
+   shots.push({x:player.x,y:player.y,vx:Math.cos(a)*600,vy:Math.sin(a)*600,life:.55});
+ }
+}
+function update(dt){
+ elapsed+=dt;wave=1+Math.floor(elapsed/15);
+ score+=dt*(4+wave);
+ attackCD=Math.max(0,attackCD-dt);
+ spawn-=dt;
+ let interval=Math.max(.25,.9-wave*.07);
+ if(spawn<=0){spawn=interval;spawnEnemy();if(Math.random()<wave*.015)spawnEnemy()}
+ player.x+=player.dx*player.speed*dt;player.y+=player.dy*player.speed*dt;
+ player.x=Math.max(18,Math.min(W-18,player.x));player.y=Math.max(100,Math.min(H-70,player.y));
+ for(let e of enemies){
+   let a=Math.atan2(player.y-e.y,player.x-e.x);
+   e.x+=Math.cos(a)*e.speed*dt;e.y+=Math.sin(a)*e.speed*dt;e.hit=Math.max(0,e.hit-dt);
+   if(dist(player,e)<player.r+e.r && e.hit<=0){hp-=8;e.hit=.7;burst(player.x,player.y,5);showMsg('OUCH 😭')}
+ }
+ for(let s of shots){
+   s.x+=s.vx*dt;s.y+=s.vy*dt;s.life-=dt;
+   for(let e of enemies){if(e.hp>0&&dist(s,e)<e.r+6){e.hp--;s.life=0;burst(e.x,e.y,5);if(e.hp<=0){kills++;score+=75+wave*10;if(kills%10===0)showMsg('KILL STREAK 🔥')}}}
+ }
+ shots=shots.filter(s=>s.life>0);
+ enemies=enemies.filter(e=>e.hp>0&&e.x>-80&&e.x<W+80&&e.y>-80&&e.y<H+80);
+ for(let p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.96;p.vy*=.96;p.life-=dt}
+ particles=particles.filter(p=>p.life>0);
+ updateHud();
+ if(hp<=0)end();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ ctx.strokeStyle='#ffffff08';ctx.lineWidth=1;
+ let g=35;for(let x=0;x<W;x+=g){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}for(let y=0;y<H;y+=g){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+ for(let p of particles){ctx.globalAlpha=Math.max(0,p.life*2);ctx.fillStyle='#ff5579';ctx.beginPath();ctx.arc(p.x,p.y,3,0,7);ctx.fill()}ctx.globalAlpha=1;
+ for(let s of shots){ctx.fillStyle='#ffd45a';ctx.shadowBlur=14;ctx.shadowColor='#ffd45a';ctx.beginPath();ctx.arc(s.x,s.y,5,0,7);ctx.fill();ctx.shadowBlur=0}
+ for(let e of enemies){
+   ctx.save();ctx.translate(e.x,e.y);
+   ctx.fillStyle=e.r<13?'#b86cff':'#ff3e68';ctx.shadowBlur=18;ctx.shadowColor=ctx.fillStyle;
+   ctx.beginPath();ctx.arc(0,0,e.r,0,7);ctx.fill();ctx.shadowBlur=0;
+   ctx.fillStyle='#090a0f';ctx.beginPath();ctx.arc(-5,-2,2.5,0,7);ctx.arc(5,-2,2.5,0,7);ctx.fill();
+   ctx.restore();
+ }
+ ctx.save();ctx.translate(player.x,player.y);ctx.rotate(Math.atan2(player.dy||-1,player.dx||0)+Math.PI/2);
+ ctx.fillStyle='#fff';ctx.shadowBlur=22;ctx.shadowColor='#6ee7ff';
+ ctx.beginPath();ctx.moveTo(0,-22);ctx.lineTo(17,17);ctx.lineTo(0,11);ctx.lineTo(-17,17);ctx.closePath();ctx.fill();ctx.shadowBlur=0;
+ ctx.fillStyle='#ff4e75';ctx.beginPath();ctx.arc(0,-4,5,0,7);ctx.fill();ctx.restore();
+}
+function loop(t){if(!run)return;let dt=Math.min(.035,(t-last)/1000||0);last=t;update(dt);draw();requestAnimationFrame(loop)}
+function startGame(){if(!$('name').value.trim())$('name').value='Player';$('menu').classList.add('hidden');$('over').style.display='none';reset();run=true;showMsg('SURVIVE 😈');last=performance.now();requestAnimationFrame(loop)}
+function end(){
+ if(!run)return;run=false;
+ let s=Math.floor(score),best=+(localStorage.onfaBest||0);if(s>best)localStorage.onfaBest=s;
+ $('finalScore').textContent=s;
+ let n=$('name').value.trim()||'Player',text;
+ if(s<500)text=`${n}, bhai tu survive nahi hua… enemy ne tujhe attendance laga ke bhej diya. 💀`;
+ else if(s<1500)text=`${n}, itna score? Enemy bhi bol rahe hain: "isko chhod do, ye khud haar gaya." 😂`;
+ else if(s<3000)text=`${n}, theek-thaak tha… ONFA me abhi legend banne me time hai. 😏`;
+ else if(s<6000)text=`${n}, okayyy 🔥 ab group me thoda izzat se baat kar sakta hai.`;
+ else if(s<10000)text=`${n}, bhai tu khelne aaya tha ya enemies ki zindagi kharab karne? 💀🔥`;
+ else text=`${n}, BAS KAR BHAI 😭🔥 leaderboard ko bhi sharam aa rahi hai!`;
+ $('roast').innerHTML=text+`<br><br><b>Best: ${Math.max(s,best)}</b>`;
+ $('over').style.display='flex';
+}
+$('start').onclick=startGame;$('again').onclick=startGame;$('atk').addEventListener('pointerdown',e=>{e.preventDefault();attack()});
+function joyStart(e){joy.active=true;joyMove(e)}function joyMove(e){if(!joy.active)return;let r=$('joy').getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dx=e.clientX-cx,dy=e.clientY-cy,l=Math.hypot(dx,dy),max=34;if(l>max){dx=dx/l*max;dy=dy/l*max}joy.x=dx/max;joy.y=dy/max;$('stick').style.transform=`translate(${dx}px,${dy}px)`;player.dx=joy.x;player.dy=joy.y}
+function joyEnd(){joy.active=false;joy.x=joy.y=0;player.dx=player.dy=0;$('stick').style.transform='translate(0,0)'}
+$('joy').addEventListener('pointerdown',joyStart);addEventListener('pointermove',e=>joyMove(e));addEventListener('pointerup',joyEnd);
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();attack()}let x=0,y=0;if(e.key==='w'||e.key==='ArrowUp')y=-1;if(e.key==='s'||e.key==='ArrowDown')y=1;if(e.key==='a'||e.key==='ArrowLeft')x=-1;if(e.key==='d'||e.key==='ArrowRight')x=1;if(x||y){let l=Math.hypot(x,y);player.dx=x/l;player.dy=y/l}});
+addEventListener('keyup',e=>{if(['w','a','s','d','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))player.dx=player.dy=0});
+</script>
+</body>
+</html>
